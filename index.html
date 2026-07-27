@@ -160,7 +160,9 @@
     border-radius:999px;cursor:pointer;transition:.18s}
   .type-toggle button.on{background:var(--ink-3);color:var(--lamp-soft)}
 
-  .book-actions{margin-top:14px;display:flex;justify-content:flex-end}
+  .book-actions{margin-top:14px;display:flex;justify-content:space-between;gap:10px}
+  #doneBook{color:var(--lamp-soft);text-decoration-color:var(--line)}
+  #doneBook:hover{color:var(--lamp)}
 
   /* ---- メモ ---- */
   .note-form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
@@ -213,6 +215,21 @@
   .log-item.film .log-pages{color:var(--moon-soft)}
   .log-item.study{border-left-color:var(--study)}
   .log-item.study .log-pages{color:var(--study-soft)}
+
+  /* ---- 読了した本 ---- */
+  .done-list{display:flex;flex-direction:column;gap:7px}
+  .done-item{display:flex;align-items:center;gap:12px;padding:11px 12px;
+    border-radius:9px;background:#161923;border:1px solid var(--line)}
+  .done-check{color:var(--lamp-soft);font-size:14px;flex-shrink:0}
+  .done-item.film .done-check{color:var(--moon-soft)}
+  .done-item.study .done-check{color:var(--study-soft)}
+  .done-main{flex:1;min-width:0}
+  .done-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .done-meta{font-size:11.5px;color:var(--paper-dim);margin-top:2px;
+    font-variant-numeric:tabular-nums}
+  .done-actions{display:flex;gap:8px;flex-shrink:0}
+  .done-actions .link{font-size:12px}
   .note-badge{margin-top:2px;align-self:flex-start;background:#1d2130;
     border:1px solid var(--line);color:var(--lamp-soft);font-family:inherit;
     font-size:11px;padding:2px 9px;border-radius:999px;cursor:pointer;transition:.15s}
@@ -347,6 +364,7 @@
       </div>
 
       <div class="book-actions">
+        <button class="link" id="doneBook">読了にする</button>
         <button class="link" id="delBook">この作品を削除</button>
       </div>
     </section>
@@ -368,6 +386,12 @@
     <section class="card" id="logCard" style="grid-column:1/-1">
       <h2><span class="dot"></span>読んだ記録<span class="log-summary" id="logSummary"></span><button class="link" id="clearOld" style="display:none">以前の記録を消す</button></h2>
       <div class="log-list" id="logList"></div>
+    </section>
+
+    <!-- 読了した本 -->
+    <section class="card" id="doneCard" style="grid-column:1/-1;display:none">
+      <h2><span class="dot"></span>読了した本<span class="log-summary" id="doneSummary"></span></h2>
+      <div class="done-list" id="doneList"></div>
     </section>
   </div>
 </div>
@@ -427,6 +451,9 @@
     return "book";
   }
   function goalOf(b){ return itemType(b)==="film" ? TIME_GOAL : PAGE_GOAL; }
+  // 種別ごとの言い回し
+  function doneVerb(b){ return itemType(b)==="film" ? "見終えた" : "読了にする"; }
+  function doneLabel(b){ return itemType(b)==="film" ? "視聴済み" : itemType(b)==="study" ? "完了" : "読了"; }
   // 分 → "1:25" / "45分"
   function hm(min){
     min=Math.max(0,Math.round(min));
@@ -557,13 +584,16 @@
   function renderBooks(){
     const sel=$("#bookSelect");
     sel.innerHTML="";
-    if(state.books.length===0){
+    const active=state.books.filter(b=>!b.done); // 進行中のみ
+    // 選択中が読了済み等でリストに無ければ、先頭の進行中に寄せる
+    if(!active.some(b=>b.id===state.activeId)) state.activeId = active[0] ? active[0].id : null;
+    if(active.length===0){
       const o=document.createElement("option");
       o.textContent="― 作品を追加してください ―"; o.value="";
       sel.appendChild(o); sel.disabled=true;
     }else{
       sel.disabled=false;
-      state.books.forEach(b=>{
+      active.forEach(b=>{
         const o=document.createElement("option");
         o.value=b.id; o.textContent=(itemType(b)==="film"?"［映］ ":itemType(b)==="study"?"［学］ ":"")+b.title;
         if(b.id===state.activeId) o.selected=true;
@@ -572,6 +602,7 @@
     }
     renderProgress();
     renderNotes();
+    renderDone();
   }
 
   function renderProgress(){
@@ -581,9 +612,12 @@
       $("#progFill").style.width="0%"; $("#pgNow").textContent="0";
       $("#pgTotal").textContent="0"; $("#pgPct").textContent="0%";
       $("#unitLabel").textContent="ページ";
-      $("#pageInput").value=""; $("#totalInput").value=""; return;
+      $("#pageInput").value=""; $("#totalInput").value="";
+      $("#doneBook").textContent="読了にする"; $("#doneBook").disabled=true; return;
     }
     body.style.opacity=1; body.style.pointerEvents="auto";
+    $("#doneBook").disabled=false;
+    $("#doneBook").textContent = b.done ? "読了を取り消す" : "読了にする";
     const film = itemType(b)==="film";
     const cur=b.currentPage||0, tot=b.totalPages||0;
     const pct = tot>0 ? Math.min(100,Math.round(cur/tot*100)) : 0;
@@ -624,7 +658,36 @@
     });
   }
 
-  // ---- タイマー ----
+  // 読了した作品の一覧
+  function renderDone(){
+    const card=$("#doneCard");
+    const list=$("#doneList");
+    const done=state.books.filter(b=>b.done)
+      .sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+    card.style.display = done.length ? "" : "none";
+    $("#doneSummary").textContent = done.length ? `${done.length} 冊` : "";
+    list.innerHTML="";
+    done.forEach(b=>{
+      const t=itemType(b);
+      const cls = t==="film"?" film" : t==="study"?" study" : "";
+      const kind = t==="film"?"映像" : t==="study"?"勉強" : "本";
+      const d=b.doneAt?new Date(b.doneAt):null;
+      const date = d?`${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`:"";
+      const el=document.createElement("div"); el.className="done-item"+cls;
+      el.innerHTML=`<span class="done-check">✓</span>
+        <div class="done-main">
+          <div class="done-title"></div>
+          <div class="done-meta">${kind}${date?` · ${date} 読了`:""}</div>
+        </div>
+        <div class="done-actions"><button class="link done-reopen" title="進行中に戻す">戻す</button></div>`;
+      el.querySelector(".done-title").textContent=b.title;
+      el.querySelector(".done-reopen").onclick=()=>{
+        b.done=false; b.doneAt=null; state.activeId=b.id;
+        save(); renderBooks(); renderDone();
+      };
+      list.appendChild(el);
+    });
+  }
   const R=112, C=2*Math.PI*R;
   const ring=$("#ring");
   ring.style.strokeDasharray=C;
@@ -976,12 +1039,26 @@
   $("#pageInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#savePage").click(); });
   $("#totalInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#savePage").click(); });
 
+  $("#doneBook").onclick=()=>{
+    const b=activeBook(); if(!b) return;
+    if(b.done){
+      b.done=false; b.doneAt=null;
+      state.activeId=b.id; // 進行中に戻したら選択
+    }else{
+      if(b.totalPages>0) b.currentPage=b.totalPages; // 進捗を100%に
+      b.done=true; b.doneAt=Date.now();
+      const next=state.books.find(x=>!x.done); // 次の進行中へ
+      state.activeId = next ? next.id : null;
+    }
+    save(); renderBooks(); renderDone();
+  };
+
   $("#delBook").onclick=()=>{
     const b=activeBook(); if(!b) return;
     if(!confirm(`「${b.title}」を削除します。メモも一緒に消えます。`)) return;
     state.books=state.books.filter(x=>x.id!==b.id);
     state.activeId=state.books[0]?state.books[0].id:null;
-    save(); renderBooks();
+    save(); renderBooks(); renderDone();
   };
 
   $("#addNote").onclick=()=>{
@@ -1080,7 +1157,10 @@
     }
     $("#focusMin").value=state.settings.focus;
     $("#breakMin").value=state.settings.break;
-    if(!state.activeId && state.books[0]) state.activeId=state.books[0].id;
+    if(!state.activeId && state.books[0]){
+      const firstActive=state.books.find(b=>!b.done);
+      state.activeId = firstActive ? firstActive.id : null;
+    }
     remaining=state.settings.focus*60; total=remaining;
     setMode("focus");
     renderBooks();
