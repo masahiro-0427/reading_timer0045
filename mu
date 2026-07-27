@@ -1,0 +1,1096 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>読書タイマー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14161e;          /* 夜の書斎の背景 */
+    --ink-2:#1c1f2b;        /* パネル */
+    --ink-3:#262a38;        /* 枠・区切り */
+    --paper:#ece6d8;        /* 温かい紙の白 */
+    --paper-dim:#a7a293;    /* 補助テキスト */
+    --lamp:#e0a94e;         /* 読書灯（集中） */
+    --lamp-soft:#f0c980;
+    --moon:#84a9cc;         /* 月明かり（休憩） */
+    --moon-soft:#a8c6e0;
+    --study:#8ea86a;        /* 勉強（ドリル等） */
+    --study-soft:#aec388;
+    --line:#333849;
+    --danger:#c96a5a;
+    --r:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #20232f 0%, var(--ink) 55%) fixed,
+      var(--ink);
+    color:var(--paper);
+    font-family:"Noto Sans JP",system-ui,sans-serif;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+    padding:28px 18px 64px;
+  }
+  .wrap{max-width:940px;margin:0 auto}
+
+  header.top{
+    display:flex;align-items:baseline;gap:14px;
+    margin-bottom:26px;flex-wrap:wrap;
+  }
+  header.top h1{
+    font-family:"Noto Serif JP",serif;font-weight:700;
+    font-size:26px;margin:0;letter-spacing:.04em;
+  }
+  header.top .sub{color:var(--paper-dim);font-size:13px}
+  .today{
+    margin-left:auto;font-size:13px;color:var(--paper-dim);
+    display:flex;align-items:center;gap:7px;
+  }
+  .today b{color:var(--lamp-soft);font-weight:700;font-size:15px}
+  .today .today-note{font-size:10.5px;opacity:.65;border:1px solid var(--line);
+    border-radius:999px;padding:2px 7px;margin-left:2px}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+
+  .card{
+    background:linear-gradient(180deg,var(--ink-2),#191c27);
+    border:1px solid var(--line);border-radius:var(--r);
+    padding:22px;
+  }
+  .card h2{
+    font-family:"Noto Serif JP",serif;font-size:15px;font-weight:600;
+    margin:0 0 16px;letter-spacing:.05em;color:var(--paper);
+    display:flex;align-items:center;gap:9px;
+  }
+  .card h2 .dot{width:7px;height:7px;border-radius:50%;background:var(--lamp)}
+
+  /* ---- タイマー ---- */
+  .timer-card{display:flex;flex-direction:column;align-items:center;text-align:center}
+  .mode-switch{display:inline-flex;background:#14161f;border:1px solid var(--line);
+    border-radius:999px;padding:4px;margin-bottom:22px}
+  .mode-switch button{
+    border:0;background:transparent;color:var(--paper-dim);
+    font-family:inherit;font-size:13px;font-weight:500;
+    padding:7px 18px;border-radius:999px;cursor:pointer;transition:.2s;
+  }
+  .mode-switch button.on{background:var(--ink-3);color:var(--paper)}
+  .mode-switch button.on.focus{color:var(--lamp-soft)}
+  .mode-switch button.on.brk{color:var(--moon-soft)}
+
+  .ring-wrap{position:relative;width:248px;height:248px;margin:6px 0 4px}
+  .ring-wrap svg{transform:rotate(-90deg);display:block}
+  .ring-bg{fill:none;stroke:var(--ink-3);stroke-width:8}
+  .ring-fg{fill:none;stroke:var(--lamp);stroke-width:8;stroke-linecap:round;
+    transition:stroke-dashoffset .95s linear, stroke .4s}
+  .glow{position:absolute;inset:0;border-radius:50%;pointer-events:none;
+    box-shadow:0 0 0 rgba(224,169,78,0);transition:box-shadow .6s}
+  .running .glow{box-shadow:0 0 60px -8px var(--lamp)}
+  .brkmode .running .glow{box-shadow:0 0 60px -8px var(--moon)}
+  .readout{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center}
+  .time{font-family:"Noto Serif JP",serif;font-weight:700;
+    font-size:56px;letter-spacing:.02em;font-variant-numeric:tabular-nums;line-height:1}
+  .phase{font-size:12px;color:var(--paper-dim);margin-top:8px;letter-spacing:.14em}
+
+  .controls{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap;justify-content:center}
+  .btn{
+    font-family:inherit;font-weight:500;font-size:14px;cursor:pointer;
+    border-radius:10px;padding:11px 22px;border:1px solid var(--line);
+    background:var(--ink-3);color:var(--paper);transition:.18s;
+  }
+  .btn:hover{border-color:var(--paper-dim)}
+  .btn.primary{background:var(--lamp);color:#241a06;border-color:var(--lamp);font-weight:700}
+  .btn.primary:hover{background:var(--lamp-soft)}
+  .brkmode .btn.primary{background:var(--moon);color:#0b1620;border-color:var(--moon)}
+  .brkmode .btn.primary:hover{background:var(--moon-soft)}
+  .btn.ghost{background:transparent}
+  .btn.mini{padding:7px 12px;font-size:12.5px}
+
+  .settings{margin-top:20px;font-size:13px;color:var(--paper-dim);
+    display:flex;gap:18px;flex-wrap:wrap;justify-content:center;align-items:center}
+
+  .timer-prog{width:100%;max-width:280px;margin-top:22px}
+  .timer-prog-shell{background:#14161f;border:1px solid var(--line);border-radius:999px;
+    height:8px;overflow:hidden}
+  .timer-prog-fill{height:100%;width:0;border-radius:999px;
+    background:linear-gradient(90deg,var(--lamp),var(--lamp-soft));transition:width .9s linear}
+  .brkmode .timer-prog-fill{background:linear-gradient(90deg,var(--moon),var(--moon-soft))}
+  .timer-prog-meta{display:flex;justify-content:space-between;margin-top:7px;
+    font-size:12px;color:var(--paper-dim);letter-spacing:.06em}
+  .timer-prog-meta span:first-child{color:var(--paper);font-weight:600;
+    font-variant-numeric:tabular-nums}
+  .settings label{display:flex;align-items:center;gap:7px}
+  .settings input{width:56px;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:8px;padding:6px 8px;font-family:inherit;
+    text-align:center;font-size:13px}
+
+  /* ---- 本 ---- */
+  .book-select{width:100%;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:10px;padding:11px 12px;font-family:inherit;
+    font-size:14px;margin-bottom:16px}
+  .progress-shell{background:#14161f;border:1px solid var(--line);border-radius:999px;
+    height:12px;overflow:hidden;margin:14px 0 10px}
+  .progress-fill{height:100%;background:linear-gradient(90deg,var(--lamp),var(--lamp-soft));
+    width:0;transition:width .5s ease;border-radius:999px}
+  .prog-meta{display:flex;justify-content:space-between;font-size:13px;color:var(--paper-dim)}
+  .prog-meta b{color:var(--paper);font-weight:600;font-variant-numeric:tabular-nums}
+  .page-row{display:flex;gap:9px;align-items:center;margin-top:16px;flex-wrap:wrap}
+  .page-row label{display:flex;align-items:center;gap:6px;color:var(--paper-dim);font-size:13px}
+  .page-row input{width:78px;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:9px;padding:9px 10px;font-family:inherit;text-align:center}
+  .page-row .slash{color:var(--paper-dim)}
+  .empty{color:var(--paper-dim);font-size:13.5px;padding:8px 0;line-height:1.8}
+
+  .add-book{margin-top:18px;padding-top:16px;border-top:1px dashed var(--line);
+    display:flex;gap:8px;flex-wrap:wrap}
+  .add-book input{background:#14161f;border:1px solid var(--line);color:var(--paper);
+    border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13.5px}
+  .add-book .title-in{flex:1;min-width:120px}
+  .add-book .pages-in{width:78px}
+  .type-toggle{display:inline-flex;background:#14161f;border:1px solid var(--line);
+    border-radius:999px;padding:3px;width:100%;margin-bottom:2px}
+  .type-toggle button{flex:1;border:0;background:transparent;color:var(--paper-dim);
+    font-family:inherit;font-size:12.5px;font-weight:500;padding:6px 0;
+    border-radius:999px;cursor:pointer;transition:.18s}
+  .type-toggle button.on{background:var(--ink-3);color:var(--lamp-soft)}
+
+  .book-actions{margin-top:14px;display:flex;justify-content:flex-end}
+
+  /* ---- メモ ---- */
+  .note-form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .note-form textarea{flex:1;min-width:160px;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:10px;padding:11px;font-family:inherit;
+    font-size:14px;resize:vertical;min-height:52px;line-height:1.6}
+  .note-form .side{display:flex;flex-direction:column;gap:8px}
+  .note-form .page-in{width:96px;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:9px;padding:9px;font-family:inherit;text-align:center;font-size:13px}
+  .notes-list{display:flex;flex-direction:column;gap:11px;max-height:360px;overflow:auto}
+  .note{background:#161923;border:1px solid var(--line);border-left:3px solid var(--lamp);
+    border-radius:9px;padding:12px 13px;position:relative}
+  .note .meta{font-size:11.5px;color:var(--paper-dim);margin-bottom:5px;
+    display:flex;gap:10px;align-items:center;font-variant-numeric:tabular-nums}
+  .note .pg{color:var(--lamp-soft);font-weight:600}
+  .note .body{font-size:14px;white-space:pre-wrap;word-break:break-word}
+  .note .del{position:absolute;top:9px;right:9px;background:transparent;border:0;
+    color:var(--paper-dim);cursor:pointer;font-size:15px;line-height:1;padding:2px 5px;border-radius:6px}
+  .note .del:hover{color:var(--danger);background:#20242f}
+
+  .link{background:transparent;border:0;color:var(--paper-dim);cursor:pointer;
+    font-family:inherit;font-size:12.5px;text-decoration:underline;text-underline-offset:3px}
+  .link:hover{color:var(--danger)}
+
+  /* ---- 読んだ記録 ---- */
+  .log-summary{margin-left:auto;font-size:12px;color:var(--paper-dim);font-weight:400;
+    letter-spacing:.02em}
+  #clearOld{margin-left:12px;font-weight:400}
+  .log-list{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow:auto}
+  .log-day{font-size:12px;color:var(--paper-dim);letter-spacing:.06em;
+    margin:14px 0 4px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+  .log-day:first-child{margin-top:0}
+  .log-item{display:flex;align-items:center;gap:12px;padding:9px 6px 9px 12px;
+    border-radius:9px;position:relative;border-left:3px solid var(--lamp);background:#161923}
+  .log-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+  .log-title{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;
+    text-overflow:ellipsis}
+  .log-range{font-size:12px;color:var(--paper-dim);font-variant-numeric:tabular-nums}
+  .log-session{font-size:11.5px;color:var(--paper-dim);font-variant-numeric:tabular-nums;
+    opacity:.85}
+  .log-side{display:flex;align-items:center;gap:12px;flex-shrink:0}
+  .log-pages{font-size:13px;font-weight:700;color:var(--lamp-soft);
+    font-variant-numeric:tabular-nums}
+  .log-time{font-size:11.5px;color:var(--paper-dim);font-variant-numeric:tabular-nums;
+    min-width:38px;text-align:right}
+  .log-item .del{background:transparent;border:0;color:var(--paper-dim);cursor:pointer;
+    font-size:15px;line-height:1;padding:2px 6px;border-radius:6px;flex-shrink:0}
+  .log-item .del:hover{color:var(--danger);background:#20242f}
+  .log-item.film{border-left-color:var(--moon)}
+  .log-item.film .log-pages{color:var(--moon-soft)}
+  .log-item.study{border-left-color:var(--study)}
+  .log-item.study .log-pages{color:var(--study-soft)}
+  .note-badge{margin-top:2px;align-self:flex-start;background:#1d2130;
+    border:1px solid var(--line);color:var(--lamp-soft);font-family:inherit;
+    font-size:11px;padding:2px 9px;border-radius:999px;cursor:pointer;transition:.15s}
+  .note-badge:hover{border-color:var(--lamp)}
+  .log-entry{display:flex;flex-direction:column}
+  .log-entry.open .note-badge{background:var(--ink-3);border-color:var(--lamp)}
+  .log-notes{display:none;flex-direction:column;gap:8px;
+    margin:2px 0 4px 15px;padding:10px 12px;border-left:2px solid var(--line);
+    background:#14161f;border-radius:0 9px 9px 0}
+  .log-entry.open .log-notes{display:flex}
+  .ln-item{display:flex;gap:9px;align-items:baseline}
+  .ln-pg{color:var(--lamp-soft);font-size:12px;font-weight:600;flex-shrink:0;
+    font-variant-numeric:tabular-nums;min-width:44px}
+  .log-item.film + .log-notes .ln-pg{color:var(--moon-soft)}
+  .ln-body{font-size:13.5px;white-space:pre-wrap;word-break:break-word;line-height:1.6}
+
+  .saving{position:fixed;bottom:16px;right:18px;font-size:12px;color:var(--paper-dim);
+    opacity:0;transition:.3s;pointer-events:none}
+  .saving.show{opacity:1}
+
+  .sync-btn{background:var(--ink-3);border:1px solid var(--line);color:var(--paper-dim);
+    font-family:inherit;font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer;
+    transition:.18s;white-space:nowrap}
+  .sync-btn:hover{border-color:var(--paper-dim);color:var(--paper)}
+  .sync-badge{position:fixed;left:16px;bottom:14px;font-size:11.5px;color:var(--paper-dim);
+    background:rgba(20,22,31,.82);border:1px solid var(--line);border-radius:999px;
+    padding:5px 11px;letter-spacing:.03em;z-index:40;backdrop-filter:blur(3px)}
+  .sync-badge.on{color:var(--moon-soft);border-color:var(--moon)}
+  .sync-note{font-size:12.5px;color:var(--paper-dim);margin:0 0 16px;min-height:1.2em}
+  .sync-help{font-size:12px;color:var(--paper-dim);margin:0 0 12px;line-height:1.7}
+  .sync-help a{color:var(--lamp-soft)}
+  #syncModal .modal-row input{width:100%}
+  #syncModal .modal-row label{width:100%;margin-bottom:6px}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(10,11,16,.72);
+    backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;
+    padding:20px;z-index:50}
+  .modal-overlay.show{display:flex}
+  .modal{background:linear-gradient(180deg,var(--ink-2),#191c27);
+    border:1px solid var(--line);border-radius:16px;padding:26px 24px;
+    max-width:380px;width:100%;box-shadow:0 24px 60px -20px #000,0 0 60px -20px var(--lamp)}
+  .modal h3{font-family:"Noto Serif JP",serif;font-size:17px;font-weight:600;
+    margin:0 0 6px;letter-spacing:.03em}
+  .modal-book{color:var(--lamp-soft);font-size:14px;margin:0 0 18px;font-weight:500}
+  .modal-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:22px}
+  .modal-row label{font-size:13.5px;color:var(--paper-dim);width:100%}
+  .modal-row input{width:110px;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:9px;padding:11px;font-family:inherit;
+    text-align:center;font-size:16px}
+  .modal-row .of{color:var(--paper-dim);font-size:13px}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end}
+
+  :focus-visible{outline:2px solid var(--lamp-soft);outline-offset:2px}
+  @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>読書タイマー</h1>
+    <span class="sub">灯りをつけて、少しずつ読む。</span>
+    <div class="today">今日読めた <b id="todayCount">0</b> 回<span class="today-note">5ページ以上</span></div>
+    <button class="sync-btn" id="syncBtn" title="端末間で同期">🔑 同期</button>
+  </header>
+
+  <div class="grid">
+    <!-- タイマー -->
+    <section class="card timer-card" id="timerCard">
+      <div class="mode-switch">
+        <button id="mFocus" class="on focus" data-mode="focus">集中</button>
+        <button id="mBreak" data-mode="break">休憩</button>
+      </div>
+
+      <div class="ring-wrap">
+        <div class="glow"></div>
+        <svg width="248" height="248" viewBox="0 0 248 248">
+          <circle class="ring-bg" cx="124" cy="124" r="112"></circle>
+          <circle class="ring-fg" id="ring" cx="124" cy="124" r="112"></circle>
+        </svg>
+        <div class="readout">
+          <div class="time" id="time">25:00</div>
+          <div class="phase" id="phase">SESSION</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" id="startBtn">開始</button>
+        <button class="btn ghost" id="resetBtn">リセット</button>
+      </div>
+
+      <div class="timer-prog">
+        <div class="timer-prog-shell"><div class="timer-prog-fill" id="timerFill"></div></div>
+        <div class="timer-prog-meta"><span id="timerPct">0%</span><span>経過</span></div>
+      </div>
+
+      <div class="settings">
+        <label>集中 <input type="number" id="focusMin" min="1" max="120" value="25"> 分</label>
+        <label>休憩 <input type="number" id="breakMin" min="1" max="60" value="5"> 分</label>
+      </div>
+    </section>
+
+    <!-- 作品 -->
+    <section class="card" id="bookCard">
+      <h2><span class="dot"></span>いま進行中</h2>
+
+      <select class="book-select" id="bookSelect"></select>
+
+      <div id="bookBody">
+        <div class="progress-shell"><div class="progress-fill" id="progFill"></div></div>
+        <div class="prog-meta">
+          <span><b id="pgNow">0</b> / <span id="pgTotal">0</span> <span id="unitLabel">ページ</span></span>
+          <span id="pgPct">0%</span>
+        </div>
+        <div class="page-row">
+          <label id="curLabel">現在 <input type="number" id="pageInput" min="0" placeholder="0"></label>
+          <span class="slash">/</span>
+          <label id="totLabel">最終 <input type="number" id="totalInput" min="1" placeholder="総ページ"></label>
+          <button class="btn mini primary" id="savePage">記録</button>
+        </div>
+      </div>
+
+      <div class="add-book">
+        <div class="type-toggle">
+          <button type="button" class="on" data-newtype="book" id="typeBook">本</button>
+          <button type="button" data-newtype="study" id="typeStudy">勉強</button>
+          <button type="button" data-newtype="film" id="typeFilm">映像</button>
+        </div>
+        <input class="title-in" id="newTitle" placeholder="本のタイトルを追加">
+        <input class="pages-in" type="number" id="newCurrent" min="0" placeholder="現在">
+        <input class="pages-in" type="number" id="newPages" min="1" placeholder="総ページ">
+        <button class="btn mini" id="addBook">追加</button>
+      </div>
+
+      <div class="book-actions">
+        <button class="link" id="delBook">この作品を削除</button>
+      </div>
+    </section>
+
+    <!-- メモ -->
+    <section class="card" id="noteCard" style="grid-column:1/-1">
+      <h2><span class="dot"></span>メモ</h2>
+      <div class="note-form">
+        <textarea id="noteText" placeholder="心に残った一節、考えたこと…"></textarea>
+        <div class="side">
+          <input class="page-in" type="number" id="notePage" min="0" placeholder="ページ">
+          <button class="btn primary" id="addNote">メモを残す</button>
+        </div>
+      </div>
+      <div class="notes-list" id="notesList"></div>
+    </section>
+
+    <!-- 読んだ記録 -->
+    <section class="card" id="logCard" style="grid-column:1/-1">
+      <h2><span class="dot"></span>読んだ記録<span class="log-summary" id="logSummary"></span><button class="link" id="clearOld" style="display:none">以前の記録を消す</button></h2>
+      <div class="log-list" id="logList"></div>
+    </section>
+  </div>
+</div>
+<div class="saving" id="saveHint">保存しました</div>
+<div class="sync-badge" id="syncBadge">● 同期OFF</div>
+
+<div class="modal-overlay" id="syncModal" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
+    <h3 id="syncTitle">端末間で同期</h3>
+    <p class="modal-book">同期コード（jsonblobの保存領域ID）で揃えます。別の端末で同じコードを入れると同じデータになります。</p>
+    <div class="modal-row">
+      <label for="syncCodeInput">同期コード</label>
+      <input type="text" id="syncCodeInput" placeholder="jsonblobのID または URL" autocomplete="off" spellcheck="false">
+    </div>
+    <p class="sync-help">はじめての場合：<a href="https://jsonblob.com" target="_blank" rel="noopener">jsonblob.com</a> を開くと保存領域が自動で作られます。アドレス末尾がその ID なので、それをここに貼ってください。２台目以降は同じ ID を入れるだけで揃います。</p>
+    <p class="sync-note" id="syncState"></p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="syncOff" style="display:none">同期を解除</button>
+      <button class="btn ghost" id="syncCancel">閉じる</button>
+      <button class="btn primary" id="syncApply">この端末を同期</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="pagePrompt" aria-hidden="true">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="promptTitle">
+    <h3 id="promptTitle">セッション終了。おつかれさま。</h3>
+    <p class="modal-book" id="promptBook"></p>
+    <div class="modal-row">
+      <label id="promptLabel">今どこまで読んだ？</label>
+      <input type="number" id="promptPage" min="0" placeholder="ページ">
+      <span class="of" id="promptOf"></span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="promptSkip">スキップ</button>
+      <button class="btn primary" id="promptSave">記録する</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const KEY = "reading:state:v1";
+  const PAGE_GOAL = 5;    // 本：この数以上読み進んだら記録
+  const TIME_GOAL = 10;   // 映像：この分以上進んだら記録
+
+  const $ = s => document.querySelector(s);
+
+  let newType = "book";   // 追加フォームで選択中の種別
+
+  // 作品の種別（旧データはtypeなし＝本とみなす）
+  function itemType(b){
+    if(!b) return "book";
+    if(b.type==="film") return "film";
+    if(b.type==="study") return "study";
+    return "book";
+  }
+  function goalOf(b){ return itemType(b)==="film" ? TIME_GOAL : PAGE_GOAL; }
+  // 分 → "1:25" / "45分"
+  function hm(min){
+    min=Math.max(0,Math.round(min));
+    const h=Math.floor(min/60), m=min%60;
+    return h>0 ? `${h}:${String(m).padStart(2,"0")}` : `${m}分`;
+  }
+
+  // ---- 状態 ----
+  let state = {
+    settings:{ focus:25, break:5 },
+    activeId:null,
+    // 作品: {id,title,type,totalPages,currentPage,notes:[{id,text,page,ts}]}
+    books:[],
+    // 記録: {id,ts,title,bookId,type,from,to,pages,start,end,minutes}（旧形式はts数値のみ）
+    log:[]
+  };
+
+  const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+
+  // ---- ローカル保存/読み込み ----
+  // Claudeのプレビュー内では window.storage、GitHub Pages等では localStorage を使う。
+  async function storeSet(key,val){
+    try{ if(window.storage){ await window.storage.set(key,val,false); return; } }catch(e){}
+    try{ localStorage.setItem(key,val); }catch(e){}
+  }
+  async function storeGet(key){
+    try{ if(window.storage){ const r=await window.storage.get(key,false); return (r&&r.value)||null; } }catch(e){}
+    try{ return localStorage.getItem(key); }catch(e){}
+    return null;
+  }
+  async function storeDel(key){
+    try{ if(window.storage){ await window.storage.delete(key,false); return; } }catch(e){}
+    try{ localStorage.removeItem(key); }catch(e){}
+  }
+
+  let saveTimer=null;
+  function flashSaved(){
+    const h=$("#saveHint"); h.classList.add("show");
+    clearTimeout(flashSaved._t); flashSaved._t=setTimeout(()=>h.classList.remove("show"),900);
+  }
+  async function save(){
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(async()=>{
+      await storeSet(KEY, JSON.stringify(state));
+      flashSaved();
+    },250);
+    syncPushDebounced(); // 同期ONのときだけ外部へも反映
+  }
+  async function load(){
+    const v = await storeGet(KEY);
+    if(v){ try{ state = Object.assign(state, JSON.parse(v)); }catch(e){} }
+  }
+
+  // ---- 端末間同期（同期コード方式・任意 / jsonblob.com） ----
+  // jsonblob.com で作った保存領域の ID を「同期コード」として使う。
+  // アプリは GET/PUT だけ（POSTしない＝ID発行まわりの失敗を回避）。
+  const LOCAL_SYNC_KEY = "reading:sync:v3"; // この端末に同期コードを覚えさせる
+  const JB = "https://jsonblob.com/api/jsonBlob";
+  let syncBlobId = null;   // 同期コード（blob ID）。null＝同期オフ
+  let syncTimer = null;
+
+  // 貼り付けが URL でも ID 単体でも末尾を取り出す
+  function normId(s){
+    s=(s||"").trim(); if(!s) return "";
+    return s.replace(/[?#].*$/,"").replace(/\/+$/,"").split("/").pop();
+  }
+
+  // 同期対象のデータを1つにまとめる／取り込む
+  function collectSyncData(){
+    return { settings:state.settings, activeId:state.activeId,
+             books:state.books, log:state.log, _savedAt:Date.now() };
+  }
+  function applySyncData(d){
+    if(!d) return;
+    if(d.settings) state.settings=d.settings;
+    if("activeId" in d) state.activeId=d.activeId;
+    if(Array.isArray(d.books)) state.books=d.books;
+    if(Array.isArray(d.log)) state.log=d.log;
+  }
+  function hasSyncData(d){ return !!(d && (Array.isArray(d.books) || d._savedAt)); }
+
+  // jsonblob API（GET/PUT のみ）。失敗時は null/false
+  async function jbGet(id){
+    try{ const r=await fetch(JB+"/"+id,{headers:{Accept:"application/json"}});
+      return r.ok ? await r.json() : null; }catch(e){ return null; }
+  }
+  async function jbPut(id,obj){
+    try{ const r=await fetch(JB+"/"+id,{method:"PUT",
+      headers:{"Content-Type":"application/json",Accept:"application/json"},
+      body:JSON.stringify(obj)}); return r.ok; }catch(e){ return false; }
+  }
+
+  // この端末に同期コードを記憶／思い出す／忘れる
+  async function rememberSync(){ await storeSet(LOCAL_SYNC_KEY, JSON.stringify({blobId:syncBlobId})); }
+  async function recallSync(){
+    const v=await storeGet(LOCAL_SYNC_KEY); if(!v) return null;
+    try{ return JSON.parse(v); }catch(e){ return null; }
+  }
+  async function forgetSync(){ await storeDel(LOCAL_SYNC_KEY); }
+
+  async function syncPush(){ return syncBlobId ? await jbPut(syncBlobId, collectSyncData()) : false; }
+  async function syncPull(){ return syncBlobId ? await jbGet(syncBlobId) : null; }
+  // 保存のたびに呼ぶ（0.7秒デバウンス）。同期オフなら何もしない
+  function syncPushDebounced(){
+    if(!syncBlobId) return;
+    clearTimeout(syncTimer);
+    syncTimer=setTimeout(syncPush,700);
+  }
+
+  // 全体を描き直す（同期取り込み後などに使う）
+  function renderAll(){
+    $("#focusMin").value=state.settings.focus;
+    $("#breakMin").value=state.settings.break;
+    if(!state.activeId && state.books[0]) state.activeId=state.books[0].id;
+    renderBooks(); renderToday(); renderLog(); draw();
+  }
+
+  function updateSyncBadge(){
+    const b=$("#syncBadge"); if(!b) return;
+    const on=!!syncBlobId;
+    b.textContent = on ? "☁ 同期ON" : "● 同期OFF";
+    b.classList.toggle("on", on);
+  }
+
+  // ---- 作品（本・勉強・映像） ----
+  function activeBook(){ return state.books.find(b=>b.id===state.activeId) || null; }
+
+  function renderBooks(){
+    const sel=$("#bookSelect");
+    sel.innerHTML="";
+    if(state.books.length===0){
+      const o=document.createElement("option");
+      o.textContent="― 作品を追加してください ―"; o.value="";
+      sel.appendChild(o); sel.disabled=true;
+    }else{
+      sel.disabled=false;
+      state.books.forEach(b=>{
+        const o=document.createElement("option");
+        o.value=b.id; o.textContent=(itemType(b)==="film"?"［映］ ":itemType(b)==="study"?"［学］ ":"")+b.title;
+        if(b.id===state.activeId) o.selected=true;
+        sel.appendChild(o);
+      });
+    }
+    renderProgress();
+    renderNotes();
+  }
+
+  function renderProgress(){
+    const b=activeBook();
+    const body=$("#bookBody");
+    if(!b){ body.style.opacity=.4; body.style.pointerEvents="none";
+      $("#progFill").style.width="0%"; $("#pgNow").textContent="0";
+      $("#pgTotal").textContent="0"; $("#pgPct").textContent="0%";
+      $("#unitLabel").textContent="ページ";
+      $("#pageInput").value=""; $("#totalInput").value=""; return;
+    }
+    body.style.opacity=1; body.style.pointerEvents="auto";
+    const film = itemType(b)==="film";
+    const cur=b.currentPage||0, tot=b.totalPages||0;
+    const pct = tot>0 ? Math.min(100,Math.round(cur/tot*100)) : 0;
+    $("#progFill").style.width=pct+"%";
+    $("#pgNow").textContent = film ? hm(cur) : cur;
+    $("#pgTotal").textContent = film ? hm(tot) : tot;
+    $("#unitLabel").textContent = film ? "" : "ページ";
+    $("#pgPct").textContent=pct+"%";
+    $("#curLabel").childNodes[0].nodeValue = film ? "現在(分) " : "現在 ";
+    $("#totLabel").childNodes[0].nodeValue = film ? "終わり(分) " : "最終 ";
+    $("#totalInput").placeholder = film ? "総尺(分)" : "総ページ";
+    $("#pageInput").value = cur||"";
+    $("#totalInput").value = tot||"";
+  }
+
+  function renderNotes(){
+    const list=$("#notesList");
+    const b=activeBook();
+    list.innerHTML="";
+    $("#addNote").disabled = !b;
+    if(!b){ list.innerHTML='<div class="empty">作品を選ぶと、その作品のメモがここに並びます。</div>'; return; }
+    if(!b.notes || b.notes.length===0){
+      list.innerHTML='<div class="empty">まだメモはありません。読みながら、気になった一節を残してみてください。</div>';
+      return;
+    }
+    b.notes.slice().reverse().forEach(n=>{
+      const el=document.createElement("div"); el.className="note";
+      const d=new Date(n.ts);
+      const date=`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+      el.innerHTML=`<div class="meta">${n.page?`<span class="pg">p.${n.page}</span>`:""}<span>${date}</span></div>
+        <div class="body"></div>
+        <button class="del" title="削除">×</button>`;
+      el.querySelector(".body").textContent=n.text;
+      el.querySelector(".del").onclick=()=>{
+        b.notes=b.notes.filter(x=>x.id!==n.id); save(); renderNotes();
+      };
+      list.appendChild(el);
+    });
+  }
+
+  // ---- タイマー ----
+  const R=112, C=2*Math.PI*R;
+  const ring=$("#ring");
+  ring.style.strokeDasharray=C;
+  ring.style.strokeDashoffset=0;
+
+  let mode="focus";      // focus | break
+  let running=false;
+  let remaining=state.settings.focus*60;
+  let total=remaining;
+  let tickId=null;
+  let sessionStart=null;                 // いまの集中を開始した時刻
+  let lastSessionStart=null, lastSessionEnd=null;  // 直近に完了した集中の始終
+
+  function modeSeconds(m){ return (m==="focus"?state.settings.focus:state.settings.break)*60; }
+
+  function setMode(m){
+    mode=m; running=false; stopTick(); sessionStart=null;
+    total=modeSeconds(m); remaining=total;
+    document.body.classList.toggle("brkmode", m==="break");
+    $("#timerCard").classList.remove("running");
+    ring.style.stroke = m==="focus" ? "var(--lamp)" : "var(--moon)";
+    $("#mFocus").classList.toggle("on", m==="focus"); $("#mFocus").classList.toggle("focus",m==="focus");
+    $("#mBreak").classList.toggle("on", m==="break"); $("#mBreak").classList.toggle("brk",m==="break");
+    $("#phase").textContent = m==="focus" ? "SESSION" : "BREAK";
+    $("#startBtn").textContent="開始";
+    draw();
+  }
+
+  function fmt(s){ const m=Math.floor(s/60), ss=s%60;
+    return `${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`; }
+
+  function draw(){
+    $("#time").textContent=fmt(Math.max(0,remaining));
+    const frac = total>0 ? remaining/total : 0;
+    ring.style.strokeDashoffset = C*(1-frac);
+    const pct = Math.round((1-frac)*100);
+    $("#timerFill").style.width=pct+"%";
+    $("#timerPct").textContent=pct+"%";
+    document.title = (running?"▶ ":"")+fmt(Math.max(0,remaining))+" · 読書タイマー";
+  }
+
+  function startTick(){
+    stopTick();
+    let end=Date.now()+remaining*1000;
+    tickId=setInterval(()=>{
+      remaining=Math.round((end-Date.now())/1000);
+      if(remaining<=0){ remaining=0; draw(); complete(); return; }
+      draw();
+    },250);
+  }
+  function stopTick(){ if(tickId){ clearInterval(tickId); tickId=null; } }
+
+  function toggle(){
+    if(remaining<=0) remaining=total;
+    running=!running;
+    if(running && mode==="focus" && sessionStart===null) sessionStart=Date.now();
+    $("#timerCard").classList.toggle("running",running);
+    $("#startBtn").textContent = running ? "一時停止" : "再開";
+    if(running) startTick(); else stopTick();
+  }
+
+  function reset(){
+    running=false; stopTick(); remaining=total; sessionStart=null;
+    $("#timerCard").classList.remove("running");
+    $("#startBtn").textContent="開始"; draw();
+  }
+
+  function complete(){
+    running=false; stopTick();
+    $("#timerCard").classList.remove("running");
+    chime(mode);
+    if(mode==="focus"){
+      lastSessionEnd = Date.now();
+      lastSessionStart = sessionStart || (lastSessionEnd - total*1000);
+      sessionStart = null;
+      setMode("break");
+      if(activeBook()) openPagePrompt();  // 本があればページ数を確認して記録
+      else startBreakAuto();              // なければそのまま休憩へ
+    }else{
+      setMode("focus");
+    }
+    // 完了後は自動で次モードを準備（開始は手動）
+  }
+
+  // 集中後の位置記録モーダル
+  function openPagePrompt(){
+    const b=activeBook(); if(!b) return;
+    const t=itemType(b), film=t==="film";
+    $("#promptBook").textContent=b.title;
+    $("#promptLabel").textContent = film ? "今どこまで観た？" : t==="study" ? "今どこまで進めた？" : "今どこまで読んだ？";
+    $("#promptPage").placeholder = film ? "分" : "ページ";
+    $("#promptOf").textContent = b.totalPages>0
+      ? (film ? `/ ${hm(b.totalPages)}` : `/ ${b.totalPages} ページ`)
+      : (film ? "分" : "ページ");
+    $("#promptPage").value = b.currentPage||"";
+    const ov=$("#pagePrompt");
+    ov.classList.add("show"); ov.setAttribute("aria-hidden","false");
+    setTimeout(()=>{ $("#promptPage").focus(); $("#promptPage").select(); },60);
+  }
+  function closePagePrompt(){
+    const ov=$("#pagePrompt");
+    ov.classList.remove("show"); ov.setAttribute("aria-hidden","true");
+    startBreakAuto();  // ページ確認を終えたら休憩を自動で始める
+  }
+  function startBreakAuto(){
+    if(mode==="break" && !running) toggle();
+  }
+  function savePagePrompt(){
+    const b=activeBook();
+    if(b){
+      let v=parseInt($("#promptPage").value,10);
+      if(!isNaN(v)&&v>=0){
+        if(b.totalPages>0) v=Math.min(v,b.totalPages);
+        const from = b.currentPage||0;
+        const gained = v - from;
+        b.currentPage=v;
+        if(gained>=goalOf(b)){
+          const mins = (lastSessionStart && lastSessionEnd)
+            ? Math.max(1, Math.round((lastSessionEnd-lastSessionStart)/60000)) : null;
+          state.log.push({id:uid(), ts:Date.now(), title:b.title, bookId:b.id,
+            type:itemType(b), from:from, to:v, pages:gained,
+            start:lastSessionStart, end:lastSessionEnd, minutes:mins});
+          renderToday(); renderLog();
+        }
+        save(); renderProgress();
+      }
+    }
+    closePagePrompt();
+  }
+
+  // ---- 音 ----
+  let AC=null;
+  function ensureAC(){
+    try{
+      AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+      if(AC.state==="suspended") AC.resume();
+    }catch(e){ AC=null; }
+    return AC;
+  }
+
+  // やわらかいベル音
+  function chime(m){
+    const ac=ensureAC(); if(!ac) return;
+    try{
+      const notes = m==="focus" ? [523.25,659.25,784] : [784,523.25];
+      notes.forEach((f,i)=>{
+        const o=ac.createOscillator(), g=ac.createGain();
+        o.type="sine"; o.frequency.value=f;
+        const t=ac.currentTime+i*0.16;
+        g.gain.setValueAtTime(0,t);
+        g.gain.linearRampToValueAtTime(0.18,t+0.02);
+        g.gain.exponentialRampToValueAtTime(0.001,t+0.9);
+        o.connect(g); g.connect(ac.destination);
+        o.start(t); o.stop(t+0.95);
+      });
+    }catch(e){}
+  }
+
+  function logTs(e){ return (e && typeof e==="object") ? e.ts : e; }
+
+  // 記録の進んだ範囲(from〜to)に入るメモを、その作品から集めて返す
+  function linkedNotes(e){
+    if(!e || typeof e!=="object") return [];
+    let b = e.bookId ? state.books.find(x=>x.id===e.bookId) : null;
+    if(!b) b = state.books.find(x=>x.title===e.title);
+    if(!b || !b.notes) return [];
+    const from=e.from||0, to=e.to||0;
+    return b.notes
+      .filter(n=> typeof n.page==="number" && n.page>=from && n.page<=to)
+      .sort((a,b)=>a.page-b.page);
+  }
+
+  function renderToday(){
+    const now=new Date(); const y=now.getFullYear(),mo=now.getMonth(),d=now.getDate();
+    const n=state.log.filter(e=>{const t=new Date(logTs(e));
+      return t.getFullYear()===y&&t.getMonth()===mo&&t.getDate()===d;}).length;
+    $("#todayCount").textContent=n;
+  }
+
+  function renderLog(){
+    const list=$("#logList");
+    const items=state.log.slice().sort((a,b)=>logTs(b)-logTs(a));
+    let sumPages=0, sumMin=0, sumFocus=0, sumStudy=0;
+    state.log.forEach(e=>{
+      if(e&&typeof e==="object"){
+        if(e.pages){
+          if(e.type==="film") sumMin+=e.pages;
+          else if(e.type==="study") sumStudy+=e.pages;
+          else sumPages+=e.pages;
+        }
+        if(e.minutes) sumFocus+=e.minutes;
+      }
+    });
+    const parts=[];
+    if(sumPages) parts.push(`本 ${sumPages}ページ`);
+    if(sumStudy) parts.push(`勉強 ${sumStudy}ページ`);
+    if(sumMin) parts.push(`映像 ${hm(sumMin)}`);
+    if(sumFocus) parts.push(`集中 ${hm(sumFocus)}`);
+    $("#logSummary").textContent = state.log.length
+      ? `${state.log.length} 回` + (parts.length ? " / "+parts.join(" · ") : "") : "";
+    const oldCount = state.log.filter(e=> !(e && typeof e==="object")).length;
+    $("#clearOld").style.display = oldCount>0 ? "inline" : "none";
+    list.innerHTML="";
+    if(items.length===0){
+      list.innerHTML='<div class="empty">まだ記録はありません。集中セッションで本は5ページ・映像は10分以上進めると、ここに残ります。</div>';
+      return;
+    }
+    let lastDay="";
+    items.forEach(e=>{
+      const isObj = e && typeof e==="object";
+      const film = isObj && e.type==="film";
+      const dt=new Date(logTs(e));
+      const dayKey=`${dt.getFullYear()}/${dt.getMonth()+1}/${dt.getDate()}`;
+      if(dayKey!==lastDay){
+        lastDay=dayKey;
+        const wd=["日","月","火","水","木","金","土"][dt.getDay()];
+        const h=document.createElement("div"); h.className="log-day";
+        h.textContent=`${dayKey}（${wd}）`;
+        list.appendChild(h);
+      }
+      const time=`${String(dt.getHours()).padStart(2,"0")}:${String(dt.getMinutes()).padStart(2,"0")}`;
+      const hhmm = t=>{ const d=new Date(t);
+        return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+      const el=document.createElement("div");
+      const cls = film ? " film" : (isObj && e.type==="study") ? " study" : "";
+      el.className="log-item"+cls;
+      if(isObj){
+        const range = film ? `${hm(e.from)} → ${hm(e.to)}` : `p.${e.from} → p.${e.to}`;
+        const amt   = film ? `+${hm(e.pages)}` : `+${e.pages}p`;
+        const hasSession = e.start && e.end;
+        const sessionLine = hasSession
+          ? `<span class="log-session">${hhmm(e.start)}〜${hhmm(e.end)} · ${e.minutes}分集中</span>`
+          : "";
+        const sideTime = hasSession ? "" : `<span class="log-time">${time}</span>`;
+        el.innerHTML=`<div class="log-main">
+            <span class="log-title"></span>
+            <span class="log-range">${range}</span>
+            ${sessionLine}
+          </div>
+          <div class="log-side"><span class="log-pages">${amt}</span>${sideTime}</div>
+          <button class="del" title="削除">×</button>`;
+        el.querySelector(".log-title").textContent=e.title;
+      }else{
+        el.innerHTML=`<div class="log-main"><span class="log-title">以前の記録</span>
+          <span class="log-range">詳細なし</span></div>
+          <div class="log-side"><span class="log-time">${time}</span></div>
+          <button class="del" title="削除">×</button>`;
+      }
+      el.querySelector(".del").onclick=()=>{
+        const idx=state.log.findIndex(x=> isObj ? (x&&x.id===e.id) : x===e);
+        if(idx>-1) state.log.splice(idx,1);
+        save(); renderLog(); renderToday();
+      };
+      const linked = isObj ? linkedNotes(e) : [];
+      if(linked.length){
+        const main=el.querySelector(".log-main");
+        const badge=document.createElement("button");
+        badge.type="button"; badge.className="note-badge";
+        badge.textContent=`メモ ${linked.length}`;
+        main.appendChild(badge);
+        const nd=document.createElement("div"); nd.className="log-notes";
+        linked.forEach(n=>{
+          const it=document.createElement("div"); it.className="ln-item";
+          const pg = film ? hm(n.page) : ("p."+n.page);
+          it.innerHTML=`<span class="ln-pg">${pg}</span><span class="ln-body"></span>`;
+          it.querySelector(".ln-body").textContent=n.text;
+          nd.appendChild(it);
+        });
+        const wrap=document.createElement("div"); wrap.className="log-entry";
+        wrap.appendChild(el); wrap.appendChild(nd);
+        badge.onclick=()=> wrap.classList.toggle("open");
+        list.appendChild(wrap);
+      }else{
+        list.appendChild(el);
+      }
+    });
+  }
+
+  // ---- イベント ----
+  $("#startBtn").onclick=toggle;
+  $("#resetBtn").onclick=reset;
+  $("#mFocus").onclick=()=>setMode("focus");
+  $("#mBreak").onclick=()=>setMode("break");
+
+  $("#focusMin").onchange=e=>{
+    let v=Math.max(1,Math.min(120,+e.target.value||25)); e.target.value=v;
+    state.settings.focus=v; save();
+    if(mode==="focus"&&!running){ total=v*60; remaining=v*60; draw(); }
+  };
+  $("#breakMin").onchange=e=>{
+    let v=Math.max(1,Math.min(60,+e.target.value||5)); e.target.value=v;
+    state.settings.break=v; save();
+    if(mode==="break"&&!running){ total=v*60; remaining=v*60; draw(); }
+  };
+
+  $("#bookSelect").onchange=e=>{ state.activeId=e.target.value||null; save();
+    renderProgress(); renderNotes(); };
+
+  // 種別トグル（本 / 勉強 / 映像）
+  function setNewType(t){
+    newType=t;
+    $("#typeBook").classList.toggle("on", t==="book");
+    $("#typeStudy").classList.toggle("on", t==="study");
+    $("#typeFilm").classList.toggle("on", t==="film");
+    if(t==="film"){
+      $("#newTitle").placeholder="作品のタイトルを追加";
+      $("#newPages").placeholder="総尺(分)";
+    }else if(t==="study"){
+      $("#newTitle").placeholder="ドリル・問題集を追加";
+      $("#newPages").placeholder="総ページ";
+    }else{
+      $("#newTitle").placeholder="本のタイトルを追加";
+      $("#newPages").placeholder="総ページ";
+    }
+  }
+  $("#typeBook").onclick=()=>setNewType("book");
+  $("#typeStudy").onclick=()=>setNewType("study");
+  $("#typeFilm").onclick=()=>setNewType("film");
+
+  $("#clearOld").onclick=()=>{
+    const n=state.log.filter(e=> !(e && typeof e==="object")).length;
+    if(!n) return;
+    if(!confirm(`詳細のない以前の記録 ${n} 件を消します。よろしいですか？`)) return;
+    state.log = state.log.filter(e=> e && typeof e==="object");
+    save(); renderLog(); renderToday();
+  };
+
+  $("#addBook").onclick=()=>{
+    const t=$("#newTitle").value.trim();
+    const p=parseInt($("#newPages").value,10);
+    let cur=parseInt($("#newCurrent").value,10);
+    const total=p>0?p:0;
+    if(isNaN(cur)||cur<0) cur=0;
+    if(total>0) cur=Math.min(cur,total);
+    if(!t){ $("#newTitle").focus(); return; }
+    const b={id:uid(),title:t,type:newType,totalPages:total,currentPage:cur,notes:[]};
+    state.books.push(b); state.activeId=b.id;
+    $("#newTitle").value=""; $("#newPages").value=""; $("#newCurrent").value="";
+    save(); renderBooks();
+  };
+
+  $("#savePage").onclick=()=>{
+    const b=activeBook(); if(!b) return;
+    let tot=parseInt($("#totalInput").value,10); if(isNaN(tot)||tot<0) tot=0;
+    let v=parseInt($("#pageInput").value,10); if(isNaN(v)||v<0) v=0;
+    if(tot>0) v=Math.min(v,tot);
+    b.totalPages=tot; b.currentPage=v; save(); renderProgress();
+  };
+  $("#pageInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#savePage").click(); });
+  $("#totalInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#savePage").click(); });
+
+  $("#delBook").onclick=()=>{
+    const b=activeBook(); if(!b) return;
+    if(!confirm(`「${b.title}」を削除します。メモも一緒に消えます。`)) return;
+    state.books=state.books.filter(x=>x.id!==b.id);
+    state.activeId=state.books[0]?state.books[0].id:null;
+    save(); renderBooks();
+  };
+
+  $("#addNote").onclick=()=>{
+    const b=activeBook(); if(!b) return;
+    const txt=$("#noteText").value.trim(); if(!txt) return;
+    let pg=parseInt($("#notePage").value,10); if(isNaN(pg)||pg<0) pg="";
+    b.notes.push({id:uid(),text:txt,page:pg,ts:Date.now()});
+    $("#noteText").value=""; $("#notePage").value="";
+    save(); renderNotes();
+  };
+  // Ctrl/Cmd+Enter でメモ追加
+  $("#noteText").addEventListener("keydown",e=>{
+    if((e.ctrlKey||e.metaKey)&&e.key==="Enter") $("#addNote").click();
+  });
+
+  $("#promptSave").onclick=savePagePrompt;
+  $("#promptSkip").onclick=closePagePrompt;
+  $("#promptPage").addEventListener("keydown",e=>{ if(e.key==="Enter") savePagePrompt(); });
+  $("#pagePrompt").addEventListener("click",e=>{ if(e.target.id==="pagePrompt") closePagePrompt(); });
+
+  // ---- 同期モーダル ----
+  function openSyncModal(){
+    $("#syncCodeInput").value = syncBlobId || "";
+    $("#syncOff").style.display = syncBlobId ? "inline-block" : "none";
+    $("#syncState").textContent = syncBlobId
+      ? "この端末は同期中です。保存のたびに自動でアップロードされます。"
+      : "同期コードを入れて同期を始めます。";
+    const ov=$("#syncModal");
+    ov.classList.add("show"); ov.setAttribute("aria-hidden","false");
+    setTimeout(()=>$("#syncCodeInput").focus(),60);
+  }
+  function closeSyncModal(){
+    const ov=$("#syncModal");
+    ov.classList.remove("show"); ov.setAttribute("aria-hidden","true");
+  }
+  async function applySync(){
+    const code=normId($("#syncCodeInput").value);
+    if(!code){ $("#syncCodeInput").focus(); return; }
+    $("#syncState").textContent="同期先を確認しています…";
+    syncBlobId=code;
+    const remote=await jbGet(code);
+    if(remote===null){
+      syncBlobId=null; updateSyncBadge();
+      $("#syncState").textContent="その同期コードにアクセスできませんでした。IDが正しいか、GitHub Pages 上で試しているか確認してください（Claudeのプレビューでは外部通信できません）。";
+      return;
+    }
+    if(hasSyncData(remote)){
+      const when = remote._savedAt ? new Date(remote._savedAt).toLocaleString() : "";
+      if(confirm(`同期先にデータがあります${when?`（保存: ${when}）`:""}。取り込みますか？\n※この端末の現在の内容は置き換わります。`)){
+        applySyncData(remote); save(); renderAll();
+      }else{
+        await syncPush(); // 取り込まない＝今の内容で上書き
+      }
+    }else{
+      await syncPush(); // 空の領域＝今の内容で初期化
+    }
+    await rememberSync();
+    updateSyncBadge();
+    closeSyncModal();
+  }
+  async function turnOffSync(){
+    syncBlobId=null;
+    await forgetSync();          // jsonblob 側のデータは他端末のために残す
+    updateSyncBadge();
+    closeSyncModal();
+  }
+  $("#syncBtn").onclick=openSyncModal;
+  $("#syncCancel").onclick=closeSyncModal;
+  $("#syncApply").onclick=applySync;
+  $("#syncOff").onclick=turnOffSync;
+  $("#syncCodeInput").addEventListener("keydown",e=>{ if(e.key==="Enter") applySync(); });
+  $("#syncModal").addEventListener("click",e=>{ if(e.target.id==="syncModal") closeSyncModal(); });
+
+  document.addEventListener("keydown",e=>{
+    if($("#syncModal").classList.contains("show")){
+      if(e.key==="Escape") closeSyncModal();
+      return;
+    }
+    if($("#pagePrompt").classList.contains("show")){
+      if(e.key==="Escape") closePagePrompt();
+      return;
+    }
+    if(e.target.matches("input,textarea,select")) return;
+    if(e.code==="Space"){ e.preventDefault(); toggle(); }
+  });
+
+  // ---- 起動 ----
+  (async function init(){
+    await load();
+    // 同期：同期コードが記憶済みならデータを取り込み
+    const saved = await recallSync();
+    if(saved && saved.blobId){
+      syncBlobId=saved.blobId;
+      const remote = await syncPull();
+      if(remote) applySyncData(remote);
+    }
+    $("#focusMin").value=state.settings.focus;
+    $("#breakMin").value=state.settings.break;
+    if(!state.activeId && state.books[0]) state.activeId=state.books[0].id;
+    remaining=state.settings.focus*60; total=remaining;
+    setMode("focus");
+    renderBooks();
+    renderToday();
+    renderLog();
+    draw();
+    updateSyncBadge();
+    if(syncBlobId){ await syncPush(); } // 取り込み後に最新をそろえる
+  })();
+})();
+</script>
+</body>
+</html>
