@@ -145,6 +145,15 @@
   .page-row input{width:78px;background:#14161f;border:1px solid var(--line);
     color:var(--paper);border-radius:9px;padding:9px 10px;font-family:inherit;text-align:center}
   .page-row .slash{color:var(--paper-dim)}
+  .quick-note-row{margin-top:10px}
+  .read-time-row{margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .read-time-row label{display:flex;align-items:center;gap:7px;color:var(--paper-dim);font-size:13px}
+  .read-time-row input{width:72px;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:9px;padding:9px 10px;font-family:inherit;text-align:center}
+  .read-time-row .rt-note{font-size:11.5px;color:var(--paper-dim);opacity:.8}
+  .quick-note-row input{width:100%;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:13px}
+  .quick-note-row input::placeholder{color:var(--paper-dim)}
   .empty{color:var(--paper-dim);font-size:13.5px;padding:8px 0;line-height:1.8}
 
   .add-book{margin-top:18px;padding-top:16px;border-top:1px dashed var(--line);
@@ -165,6 +174,12 @@
   #doneBook:hover{color:var(--lamp)}
 
   /* ---- メモ ---- */
+  .synopsis-block{margin-bottom:20px}
+  .synopsis-block textarea{width:100%;background:#14161f;border:1px solid var(--line);
+    color:var(--paper);border-radius:10px;padding:12px;font-family:inherit;
+    font-size:14px;line-height:1.7;resize:vertical;min-height:80px}
+  .synopsis-block textarea::placeholder{color:var(--paper-dim)}
+  .note-h2{margin-top:4px;padding-top:18px;border-top:1px solid var(--line)}
   .note-form{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
   .note-form textarea{flex:1;min-width:160px;background:#14161f;border:1px solid var(--line);
     color:var(--paper);border-radius:10px;padding:11px;font-family:inherit;
@@ -349,6 +364,13 @@
           <label id="totLabel">最終 <input type="number" id="totalInput" min="1" placeholder="総ページ"></label>
           <button class="btn mini primary" id="savePage">記録</button>
         </div>
+        <div class="read-time-row">
+          <label>読んだ時間 <input type="number" id="readMinutes" min="0" placeholder="分"></label>
+          <span class="rt-note">（任意・記録に残ります）</span>
+        </div>
+        <div class="quick-note-row">
+          <input type="text" id="quickNote" placeholder="このページのメモ（任意・書けば記録に紐づきます）">
+        </div>
       </div>
 
       <div class="add-book">
@@ -369,13 +391,22 @@
       </div>
     </section>
 
-    <!-- メモ -->
+    <!-- あらすじ・メモ -->
     <section class="card" id="noteCard" style="grid-column:1/-1">
-      <h2><span class="dot"></span>メモ</h2>
+      <h2><span class="dot"></span>あらすじ</h2>
+      <div class="note-form">
+        <textarea id="synText" placeholder="この範囲のあらすじ・要約…"></textarea>
+        <div class="side">
+          <input class="page-in" type="text" id="synPage" placeholder="ページ 例:1-50" inputmode="numeric">
+          <button class="btn primary" id="addSyn">追加</button>
+        </div>
+      </div>
+      <div class="notes-list" id="synList"></div>
+      <h2 class="note-h2"><span class="dot"></span>メモ</h2>
       <div class="note-form">
         <textarea id="noteText" placeholder="心に残った一節、考えたこと…"></textarea>
         <div class="side">
-          <input class="page-in" type="number" id="notePage" min="0" placeholder="ページ">
+          <input class="page-in" type="text" id="notePage" placeholder="ページ 例:20 / 20-35" inputmode="numeric">
           <button class="btn primary" id="addNote">メモを残す</button>
         </div>
       </div>
@@ -465,7 +496,7 @@
   let state = {
     settings:{ focus:10, break:5 },
     activeId:null,
-    // 作品: {id,title,type,totalPages,currentPage,done,doneAt,notes:[{id,text,page,ts}]}
+    // 作品: {id,title,type,totalPages,currentPage,done,doneAt,notes:[{id,text,page,pageEnd,ts}]}
     books:[],
     // 記録: {id,ts,title,bookId,type,from,to,pages,start,end,minutes}（旧形式はts数値のみ）
     log:[]
@@ -635,9 +666,54 @@
     $("#totalInput").value = tot||"";
   }
 
+  // 旧: b.summary（単一テキスト）→ 新: b.synopses（範囲つき複数）に移行
+  function ensureSynopses(b){
+    if(!b) return;
+    if(!Array.isArray(b.synopses)){
+      b.synopses=[];
+      if(typeof b.summary==="string" && b.summary.trim()){
+        b.synopses.push({id:uid(), text:b.summary.trim(), page:"", pageEnd:null, ts:Date.now()});
+      }
+      delete b.summary;
+    }
+  }
+
+  function renderSynopses(){
+    const list=$("#synList"); if(!list) return;
+    const b=activeBook();
+    ensureSynopses(b);
+    $("#addSyn").disabled = !b;
+    list.innerHTML="";
+    if(!b){ list.innerHTML='<div class="empty">作品を選ぶと、その作品のあらすじがここに並びます。</div>'; return; }
+    if(!b.synopses.length){
+      list.innerHTML='<div class="empty">まだあらすじはありません。範囲（例:1-50）とあわせて要約を残せます。</div>';
+      return;
+    }
+    const film=itemType(b)==="film";
+    // ページ範囲の開始順に並べる（範囲なしは末尾）
+    b.synopses.slice().sort((a,c)=>{
+      const pa=typeof a.page==="number"?a.page:Infinity, pc=typeof c.page==="number"?c.page:Infinity;
+      return pa-pc;
+    }).forEach(s=>{
+      const el=document.createElement("div"); el.className="note";
+      const pgLabel=notePageLabel(s,film);
+      const d=new Date(s.ts);
+      const date=`${d.getMonth()+1}/${d.getDate()}`;
+      el.innerHTML=`<div class="meta">${pgLabel?`<span class="pg">${pgLabel}</span>`:'<span class="pg">全体</span>'}<span>${date}</span></div>
+        <div class="body"></div>
+        <button class="del" title="削除">×</button>`;
+      el.querySelector(".body").textContent=s.text;
+      el.querySelector(".del").onclick=()=>{
+        b.synopses=b.synopses.filter(x=>x.id!==s.id); save(); renderSynopses();
+      };
+      list.appendChild(el);
+    });
+  }
+
   function renderNotes(){
     const list=$("#notesList");
     const b=activeBook();
+    renderSynopses(); // あらすじ欄も更新
     list.innerHTML="";
     $("#addNote").disabled = !b;
     if(!b){ list.innerHTML='<div class="empty">作品を選ぶと、その作品のメモがここに並びます。</div>'; return; }
@@ -645,11 +721,13 @@
       list.innerHTML='<div class="empty">まだメモはありません。読みながら、気になった一節を残してみてください。</div>';
       return;
     }
+    const filmB = itemType(b)==="film";
     b.notes.slice().reverse().forEach(n=>{
       const el=document.createElement("div"); el.className="note";
       const d=new Date(n.ts);
       const date=`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
-      el.innerHTML=`<div class="meta">${n.page?`<span class="pg">p.${n.page}</span>`:""}<span>${date}</span></div>
+      const pgLabel=notePageLabel(n,filmB);
+      el.innerHTML=`<div class="meta">${pgLabel?`<span class="pg">${pgLabel}</span>`:""}<span>${date}</span></div>
         <div class="body"></div>
         <button class="del" title="削除">×</button>`;
       el.querySelector(".body").textContent=n.text;
@@ -703,10 +781,23 @@
   let sessionStart=null;                 // いまの集中を開始した時刻
   let lastSessionStart=null, lastSessionEnd=null;  // 直近に完了した集中の始終
 
+  // タイマー動作中は画面を消さない（対応ブラウザ・HTTPSのみ有効）
+  let wakeLock=null;
+  async function acquireWake(){
+    try{ if("wakeLock" in navigator){ wakeLock = await navigator.wakeLock.request("screen"); } }catch(e){ wakeLock=null; }
+  }
+  async function releaseWake(){
+    try{ if(wakeLock){ await wakeLock.release(); } }catch(e){} finally{ wakeLock=null; }
+  }
+  // タブに戻ったとき、動作中なら取り直す（非表示になると自動解放されるため）
+  document.addEventListener("visibilitychange",()=>{
+    if(document.visibilityState==="visible" && running && !wakeLock) acquireWake();
+  });
+
   function modeSeconds(m){ return (m==="focus"?state.settings.focus:state.settings.break)*60; }
 
   function setMode(m){
-    mode=m; running=false; stopTick(); sessionStart=null;
+    mode=m; running=false; stopTick(); sessionStart=null; releaseWake();
     total=modeSeconds(m); remaining=total;
     document.body.classList.toggle("brkmode", m==="break");
     $("#timerCard").classList.remove("running");
@@ -746,13 +837,14 @@
     if(remaining<=0) remaining=total;
     running=!running;
     if(running && mode==="focus" && sessionStart===null) sessionStart=Date.now();
+    if(running) acquireWake(); else releaseWake();
     $("#timerCard").classList.toggle("running",running);
     $("#startBtn").textContent = running ? "一時停止" : "再開";
     if(running) startTick(); else stopTick();
   }
 
   function reset(){
-    running=false; stopTick(); remaining=total; sessionStart=null;
+    running=false; stopTick(); remaining=total; sessionStart=null; releaseWake();
     $("#timerCard").classList.remove("running");
     $("#startBtn").textContent="開始"; draw();
   }
@@ -850,7 +942,33 @@
 
   function logTs(e){ return (e && typeof e==="object") ? e.ts : e; }
 
-  // 記録の進んだ範囲(from〜to)に入るメモを、その作品から集めて返す
+  // "20" → {page:20,pageEnd:null} / "20-35" → {page:20,pageEnd:35}
+  function parsePageRange(s){
+    s=(s||"").trim().replace(/[〜～－—―ー–]/g,"-");
+    if(!s) return {page:"", pageEnd:null};
+    const m=s.match(/^(\d+)\s*-\s*(\d+)$/);
+    if(m){ let a=+m[1], b=+m[2]; if(a>b)[a,b]=[b,a]; return {page:a, pageEnd:(b===a?null:b)}; }
+    const n=parseInt(s,10);
+    return (isNaN(n)||n<0) ? {page:"", pageEnd:null} : {page:n, pageEnd:null};
+  }
+  // メモのページ表示ラベル（範囲なら p.20–35 / 映像なら 0:45–1:30）
+  function notePageLabel(n, film){
+    if(typeof n.page!=="number") return "";
+    const fmtP = v => film ? hm(v) : ("p."+v);
+    if(typeof n.pageEnd==="number" && n.pageEnd!==n.page){
+      const end = film ? hm(n.pageEnd) : n.pageEnd;
+      return film ? `${hm(n.page)}–${hm(n.pageEnd)}` : `p.${n.page}–${n.pageEnd}`;
+    }
+    return fmtP(n.page);
+  }
+  // メモの占めるページ範囲 [a,b]
+  function noteSpan(n){
+    if(typeof n.page!=="number") return null;
+    const a=n.page, b=(typeof n.pageEnd==="number"&&n.pageEnd>=n.page)?n.pageEnd:n.page;
+    return [a,b];
+  }
+
+  // 記録の進んだ範囲(from〜to)と重なるメモを、その作品から集めて返す
   function linkedNotes(e){
     if(!e || typeof e!=="object") return [];
     let b = e.bookId ? state.books.find(x=>x.id===e.bookId) : null;
@@ -858,7 +976,7 @@
     if(!b || !b.notes) return [];
     const from=e.from||0, to=e.to||0;
     return b.notes
-      .filter(n=> typeof n.page==="number" && n.page>=from && n.page<=to)
+      .filter(n=>{ const sp=noteSpan(n); return sp && sp[0]<=to && sp[1]>=from; }) // 範囲が重なる
       .sort((a,b)=>a.page-b.page);
   }
 
@@ -887,7 +1005,7 @@
     if(sumPages) parts.push(`本 ${sumPages}ページ`);
     if(sumStudy) parts.push(`勉強 ${sumStudy}ページ`);
     if(sumMin) parts.push(`映像 ${hm(sumMin)}`);
-    if(sumFocus) parts.push(`集中 ${hm(sumFocus)}`);
+    if(sumFocus) parts.push(`時間 ${hm(sumFocus)}`);
     $("#logSummary").textContent = state.log.length
       ? `${state.log.length} 回` + (parts.length ? " / "+parts.join(" · ") : "") : "";
     const oldCount = state.log.filter(e=> !(e && typeof e==="object")).length;
@@ -922,7 +1040,7 @@
         const hasSession = e.start && e.end;
         const sessionLine = hasSession
           ? `<span class="log-session">${hhmm(e.start)}〜${hhmm(e.end)} · ${e.minutes}分集中</span>`
-          : "";
+          : (e.minutes ? `<span class="log-session">${e.minutes}分読書</span>` : "");
         const sideTime = hasSession ? "" : `<span class="log-time">${time}</span>`;
         el.innerHTML=`<div class="log-main">
             <span class="log-title"></span>
@@ -953,7 +1071,7 @@
         const nd=document.createElement("div"); nd.className="log-notes";
         linked.forEach(n=>{
           const it=document.createElement("div"); it.className="ln-item";
-          const pg = film ? hm(n.page) : ("p."+n.page);
+          const pg = notePageLabel(n, film);
           it.innerHTML=`<span class="ln-pg">${pg}</span><span class="ln-body"></span>`;
           it.querySelector(".ln-body").textContent=n.text;
           nd.appendChild(it);
@@ -1036,8 +1154,29 @@
     let tot=parseInt($("#totalInput").value,10); if(isNaN(tot)||tot<0) tot=0;
     let v=parseInt($("#pageInput").value,10); if(isNaN(v)||v<0) v=0;
     if(tot>0) v=Math.min(v,tot);
-    b.totalPages=tot; b.currentPage=v; save(); renderProgress();
+    const from=b.currentPage||0;
+    const gained=v-from;
+    b.totalPages=tot; b.currentPage=v;
+    // メモ欄に入力があれば、記録したページに紐づけて保存
+    const noteText=$("#quickNote").value.trim();
+    if(noteText){
+      if(!b.notes) b.notes=[];
+      b.notes.push({id:uid(), text:noteText, page:v, ts:Date.now()});
+      $("#quickNote").value=""; renderNotes();
+    }
+    // ポモドーロを使わなくても、閾値以上進んでいれば記録を残す（集中時刻は無し）
+    let mins=parseInt($("#readMinutes").value,10); if(isNaN(mins)||mins<=0) mins=null;
+    if(gained>=goalOf(b)){
+      state.log.push({id:uid(), ts:Date.now(), title:b.title, bookId:b.id,
+        type:itemType(b), from:from, to:v, pages:gained,
+        start:null, end:null, minutes:mins});
+      renderToday(); renderLog();
+    }
+    $("#readMinutes").value="";
+    save(); renderProgress();
   };
+  $("#readMinutes").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#savePage").click(); });
+  $("#quickNote").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#savePage").click(); });
   $("#pageInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#savePage").click(); });
   $("#totalInput").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#savePage").click(); });
 
@@ -1063,11 +1202,25 @@
     save(); renderBooks(); renderDone();
   };
 
+  $("#addSyn").onclick=()=>{
+    const b=activeBook(); if(!b) return;
+    const txt=$("#synText").value.trim(); if(!txt) return;
+    ensureSynopses(b);
+    const {page,pageEnd}=parsePageRange($("#synPage").value);
+    b.synopses.push({id:uid(), text:txt, page:page, pageEnd:pageEnd, ts:Date.now()});
+    $("#synText").value=""; $("#synPage").value="";
+    save(); renderSynopses();
+  };
+  // Ctrl/Cmd+Enter であらすじ追加
+  $("#synText").addEventListener("keydown",e=>{
+    if((e.ctrlKey||e.metaKey)&&e.key==="Enter") $("#addSyn").click();
+  });
+
   $("#addNote").onclick=()=>{
     const b=activeBook(); if(!b) return;
     const txt=$("#noteText").value.trim(); if(!txt) return;
-    let pg=parseInt($("#notePage").value,10); if(isNaN(pg)||pg<0) pg="";
-    b.notes.push({id:uid(),text:txt,page:pg,ts:Date.now()});
+    const {page,pageEnd}=parsePageRange($("#notePage").value);
+    b.notes.push({id:uid(),text:txt,page:page,pageEnd:pageEnd,ts:Date.now()});
     $("#noteText").value=""; $("#notePage").value="";
     save(); renderNotes();
   };
